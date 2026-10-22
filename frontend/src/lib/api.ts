@@ -421,7 +421,8 @@ export const getBenchmark = () => json<BenchmarkResults>("/api/benchmark/results
 
 export function backendOrigin(): string {
   // Set NEXT_PUBLIC_BACKEND_URL in production (e.g. the Hugging Face Space URL) so the docs link and curl sample are right.
-  if (process.env.NEXT_PUBLIC_BACKEND_URL) return process.env.NEXT_PUBLIC_BACKEND_URL.replace(/\/$/, "");
+  const env = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (env) return (env.startsWith("http") ? env : `https://${env}`).replace(/\/$/, "");
   if (typeof window === "undefined") return "http://localhost:8000";
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 }

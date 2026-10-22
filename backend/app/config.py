@@ -44,6 +44,8 @@ class Settings(BaseSettings):
 
     # Demo merchant, created on first start so the app is usable out of the box.
     SEED_DEMO_DATA: bool = True
+    SEED_DEMO_COUNT: int = 24
+    OCR_THREADS: int = 0  # 0 = onnxruntime default; 1 suits tiny shared CPUs
     DEMO_MERCHANT_EMAIL: str = "merchant@pramaan.local"
     DEMO_MERCHANT_PASSWORD: str = "shopkeeper123"
     DEMO_MERCHANT_NAME: str = "Sharma Kirana Store"
@@ -54,6 +56,12 @@ class Settings(BaseSettings):
     @classmethod
     def _as_path(cls, v):
         return Path(v)
+
+    @field_validator("PUBLIC_APP_URL", mode="before")
+    @classmethod
+    def _with_scheme(cls, v):
+        v = str(v).strip().rstrip("/")
+        return v if v.startswith("http") else f"https://{v}"
 
     @property
     def cors_origins(self) -> List[str]:

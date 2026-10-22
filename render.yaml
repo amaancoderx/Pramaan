@@ -1,0 +1,48 @@
+# One-click Render deploy: Dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: pramaan-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: SEED_DEMO_COUNT
+        value: "6"
+      - key: OCR_THREADS
+        value: "1"
+      - key: PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: pramaan-web
+          property: host
+
+  - type: web
+    name: pramaan-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/
+    startCommand: node .next/standalone/server.js
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: pramaan-api
+          property: host
+      - key: NEXT_PUBLIC_BACKEND_URL
+        fromService:
+          type: web
+          name: pramaan-api
+          property: host

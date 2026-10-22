@@ -40,7 +40,8 @@ class OCREngine:
                 if not self._initialized:
                     try:
                         from rapidocr_onnxruntime import RapidOCR
-                        self._ocr = RapidOCR(det_limit_type="max", det_limit_side_len=960, use_cls=False)
+                        self._ocr = RapidOCR(det_limit_type="max", det_limit_side_len=960, use_cls=False,
+                                             **({"intra_op_num_threads": settings.OCR_THREADS} if settings.OCR_THREADS else {}))
                         self._name = "rapidocr-onnxruntime"
                     except Exception as e:  # pragma: no cover
                         log.warning("RapidOCR unavailable (%s); falling back to tesseract", e)

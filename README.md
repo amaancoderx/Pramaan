@@ -102,23 +102,19 @@ To open the app from a phone on the same Wi-Fi, browse to `http://<your-computer
 
 ## Deploy for free
 
-Frontend on **Vercel**, backend (OCR needs real RAM) on a **Hugging Face Docker Space**. Both are free.
+Everything (API and web app) deploys to **Render** from the [`render.yaml`](render.yaml) blueprint in one go:
 
-1. **Backend.** Create a Space at <https://huggingface.co/new-space> named `pramaan-api` with SDK **Docker** (blank).
-   In the Space **Settings -> Variables and secrets**, add the secrets `SECRET_KEY` (any long random string),
-   `ENV=production` and `PUBLIC_APP_URL=https://<your-app>.vercel.app`. Then push the backend with a write token
-   from <https://huggingface.co/settings/tokens>:
-   ```powershell
-   .\deploy\push-backend-to-hf.ps1 -User <hf-username> -Token <hf-token>
-   ```
-   When the build finishes, `https://<hf-username>-pramaan-api.hf.space/api/health` returns `ok`.
-2. **Frontend.** On <https://vercel.com/new>, import this GitHub repo and set **Root Directory** to `frontend`.
-   Add the environment variables `BACKEND_URL` and `NEXT_PUBLIC_BACKEND_URL`, both set to
-   `https://<hf-username>-pramaan-api.hf.space`. Deploy.
-3. Open the Vercel URL and sign in with the demo account.
+1. Sign in at <https://render.com> with GitHub.
+2. **New -> Blueprint**, pick this repository, click **Apply**.
+3. Wait for both services to go live (the first build takes about 10 minutes), then open the `pramaan-web` URL and
+   sign in with **merchant@pramaan.local / shopkeeper123**.
 
-Free Spaces have no persistent disk. On restart (or after about 48 h idle) the database resets, and the demo merchant
-and sample history are recreated automatically.
+The blueprint generates `SECRET_KEY`, wires the two services to each other, and seeds the demo merchant.
+
+Free-plan notes: services sleep after 15 minutes idle (the first request then takes about a minute), the disk is
+not persistent (the demo data is recreated on every start), and the free CPU is small, so one check can take
+much longer than on a laptop. For a live demo, open the site a few minutes early, or switch `pramaan-api` to the
+Starter plan in the Render dashboard.
 
 ---
 

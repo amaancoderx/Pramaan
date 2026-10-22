@@ -24,7 +24,7 @@ log = logging.getLogger("pramaan")
 def _seed_in_background() -> None:
     with SessionLocal() as db:
         try:
-            seed_history(db, ensure_demo_merchant(db))
+            seed_history(db, ensure_demo_merchant(db), count=settings.SEED_DEMO_COUNT)
         except Exception:  # pragma: no cover - demo data must never take the API down
             log.exception("demo seeding failed")
 
