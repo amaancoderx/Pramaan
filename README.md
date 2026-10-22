@@ -23,6 +23,7 @@ with a clear verdict and the reasons behind it.
 
 - [Verdicts](#verdicts)
 - [Quick start](#quick-start)
+- [Deploy for free](#deploy-for-free)
 - [How it works](#how-it-works)
 - [Benchmark](#benchmark-synthetic-our-own-data)
 - [REST API](#rest-api)
@@ -98,6 +99,26 @@ To open the app from a phone on the same Wi-Fi, browse to `http://<your-computer
 5. **Order QR**: create a ₹640 QR, then verify a receipt against that order.
 6. **Dashboard**: history, filters, UTR search and estimated rupees saved. **Download report** gives a PDF whose QR
    opens a public record of the check.
+
+## Deploy for free
+
+Frontend on **Vercel**, backend (OCR needs real RAM) on a **Hugging Face Docker Space**. Both are free.
+
+1. **Backend.** Create a Space at <https://huggingface.co/new-space> named `pramaan-api` with SDK **Docker** (blank).
+   In the Space **Settings -> Variables and secrets**, add the secrets `SECRET_KEY` (any long random string),
+   `ENV=production` and `PUBLIC_APP_URL=https://<your-app>.vercel.app`. Then push the backend with a write token
+   from <https://huggingface.co/settings/tokens>:
+   ```powershell
+   .\deploy\push-backend-to-hf.ps1 -User <hf-username> -Token <hf-token>
+   ```
+   When the build finishes, `https://<hf-username>-pramaan-api.hf.space/api/health` returns `ok`.
+2. **Frontend.** On <https://vercel.com/new>, import this GitHub repo and set **Root Directory** to `frontend`.
+   Add the environment variables `BACKEND_URL` and `NEXT_PUBLIC_BACKEND_URL`, both set to
+   `https://<hf-username>-pramaan-api.hf.space`. Deploy.
+3. Open the Vercel URL and sign in with the demo account.
+
+Free Spaces have no persistent disk. On restart (or after about 48 h idle) the database resets, and the demo merchant
+and sample history are recreated automatically.
 
 ---
 

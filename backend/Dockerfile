@@ -18,8 +18,9 @@ COPY pytest.ini ./
 RUN useradd --create-home --uid 1000 pramaan && mkdir -p /app/storage && chown -R pramaan /app
 USER pramaan
 
+ENV PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
-    CMD curl -fsS http://localhost:8000/api/health || exit 1
+    CMD curl -fsS http://localhost:${PORT}/api/health || exit 1
 # Keep-alive must outlive the Next.js proxy's pooled sockets, or reused sockets get reset mid-response.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-keep-alive", "75"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75
