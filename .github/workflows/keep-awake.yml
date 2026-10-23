@@ -1,0 +1,29 @@
+# Render's free plan sleeps a service after 15 idle minutes. This pings the web app's
+# /api/health (which proxies to the API) so both stay awake. GitHub can start scheduled
+# runs a few minutes late, so each run pings three times, four minutes apart.
+name: Keep Render awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Ping web and API
+        run: |
+          for i in 1 2 3; do
+            for url in https://pramaan-web-zd30.onrender.com/api/health https://pramaan-api-852s.onrender.com/api/health; do
+              code=$(curl -s -o /dev/null -m 90 -w "%{http_code}" "$url" || echo "fail")
+              echo "$(date -u +%H:%M:%S) $url -> $code"
+            done
+            [ "$i" -lt 3 ] && sleep 240
+          done
+          true
