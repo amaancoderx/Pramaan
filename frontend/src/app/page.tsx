@@ -3,7 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Camera, Check, FileImage, ImageOff, Landmark, ListChecks, ScanSearch, Upload, WifiOff } from "lucide-react";
-import { analyzeScreenshot, ApiError, DemoSample, fetchDemoSample, listDemoSamples, listOrders, Order } from "@/lib/api";
+import { analyzeScreenshot, ApiError, CheckMode, DemoSample, fetchDemoSample, listDemoSamples, listOrders, Order } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import { Alert, Button, Card, Label, Select, Skeleton, Spinner } from "@/components/ui";
 import { formatINR } from "@/lib/format";
@@ -101,6 +101,22 @@ function VerifyPage() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderRef, setOrderRef] = useState<string>(params.get("order") ?? "");
+  const [mode, setMode] = useState<CheckMode>("merchant");
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("pramaan_mode") === "authenticity") setMode("authenticity");
+    } catch {
+      // storage unavailable; keep the default
+    }
+  }, []);
+  const chooseMode = (m: CheckMode) => {
+    setMode(m);
+    try {
+      window.localStorage.setItem("pramaan_mode", m);
+    } catch {
+      // storage unavailable; the choice lasts for this visit
+    }
+  };
   const [samples, setSamples] = useState<DemoSample[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -144,14 +160,14 @@ function VerifyPage() {
       setElapsed(0);
       setBusy(true);
       try {
-        const result = await analyzeScreenshot(file, orderRef || null);
+        const result = await analyzeScreenshot(file, orderRef || null, mode);
         router.push(`/checks/${encodeURIComponent(result.id)}`);
       } catch (err) {
         setError(toUploadError(err, t));
         setBusy(false);
       }
     },
-    [orderRef, router, t]
+    [orderRef, mode, router, t]
   );
 
   const runSample = async (key: string) => {
@@ -160,7 +176,7 @@ function VerifyPage() {
     setBusy(true);
     try {
       const file = await fetchDemoSample(key);
-      const result = await analyzeScreenshot(file, orderRef || null);
+      const result = await analyzeScreenshot(file, orderRef || null, mode);
       router.push(`/checks/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(toUploadError(err, t));
@@ -183,6 +199,30 @@ function VerifyPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{t.verify.title}</h1>
         <p className="mt-2 text-sm text-muted sm:text-base">{t.verify.subtitle}</p>
+      </div>
+
+      <div role="radiogroup" aria-label={t.verify.modeTitle} className="grid gap-3 sm:grid-cols-2">
+        {(
+          [
+            ["merchant", t.verify.modeMerchant, t.verify.modeMerchantHint],
+            ["authenticity", t.verify.modeAuthenticity, t.verify.modeAuthenticityHint],
+          ] as const
+        ).map(([value, label, hint]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={mode === value}
+            onClick={() => chooseMode(value)}
+            className={cn(
+              "rounded-xl border bg-surface px-4 py-3 text-left transition-colors",
+              mode === value ? "border-ink ring-1 ring-ink" : "border-line hover:border-line-strong"
+            )}
+          >
+            <span className="block text-sm font-semibold text-ink">{label}</span>
+            <span className="mt-0.5 block text-xs text-muted">{hint}</span>
+          </button>
+        ))}
       </div>
 
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPick} />

@@ -2,7 +2,7 @@
   "dataset_name": "Pramaan synthetic UPI receipts v1",
   "description": "Generic, brand-free MOCK receipts: 20 clean and 20 with scripted tamper operations (edited_amount x3, edited_utr x3, edited_date x3, cloned_digits x3, pasted_receiver x3, heavy_compression x3, editor_software x2).",
   "generated_at": "2026-10-23T02:56:00",
-  "evaluated_at": "2026-10-22T21:53:52.350992+00:00",
+  "evaluated_at": "2026-10-23T11:26:20.807312+00:00",
   "decision_rule": "Flagged = verdict SUSPICIOUS or LIKELY FAKE. Positive class = tampered.",
   "note": "Results on our own synthetic test set of mock receipts. Not a measure of real-world accuracy.",
   "total_samples": 40,
@@ -19,8 +19,8 @@
     "precision": 100.0,
     "recall": 100.0,
     "f1_score": 100.0,
-    "avg_latency_seconds": 8.76,
-    "max_latency_seconds": 15.65
+    "avg_latency_seconds": 5.49,
+    "max_latency_seconds": 14.69
   },
   "per_tamper": {
     "edited_amount": {
@@ -66,7 +66,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 6.358
+      "processing_time": 8.292
     },
     {
       "id": "CLEAN-02",
@@ -81,7 +81,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 5.723
+      "processing_time": 4.641
     },
     {
       "id": "CLEAN-03",
@@ -96,7 +96,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 5.121
+      "processing_time": 3.628
     },
     {
       "id": "CLEAN-04",
@@ -111,7 +111,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 7.426
+      "processing_time": 4.683
     },
     {
       "id": "CLEAN-05",
@@ -126,7 +126,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 5.693
+      "processing_time": 3.991
     },
     {
       "id": "CLEAN-06",
@@ -141,7 +141,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 8.567
+      "processing_time": 9.926
     },
     {
       "id": "CLEAN-07",
@@ -156,7 +156,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 7.058
+      "processing_time": 5.22
     },
     {
       "id": "CLEAN-08",
@@ -171,7 +171,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 8.265
+      "processing_time": 6.133
     },
     {
       "id": "CLEAN-09",
@@ -186,7 +186,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 10.171
+      "processing_time": 3.925
     },
     {
       "id": "CLEAN-10",
@@ -201,7 +201,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 5.965
+      "processing_time": 3.773
     },
     {
       "id": "CLEAN-11",
@@ -216,7 +216,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 7.235
+      "processing_time": 5.086
     },
     {
       "id": "CLEAN-12",
@@ -231,7 +231,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 10.342
+      "processing_time": 5.812
     },
     {
       "id": "CLEAN-13",
@@ -246,7 +246,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 6.669
+      "processing_time": 4.289
     },
     {
       "id": "CLEAN-14",
@@ -261,7 +261,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 6.459
+      "processing_time": 4.38
     },
     {
       "id": "CLEAN-15",
@@ -276,7 +276,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 7.25
+      "processing_time": 4.89
     },
     {
       "id": "CLEAN-16",
@@ -291,7 +291,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 12.864
+      "processing_time": 4.131
     },
     {
       "id": "CLEAN-17",
@@ -306,7 +306,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 6.464
+      "processing_time": 3.669
     },
     {
       "id": "CLEAN-18",
@@ -321,7 +321,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 7.901
+      "processing_time": 6.236
     },
     {
       "id": "CLEAN-19",
@@ -336,7 +336,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 10.342
+      "processing_time": 9.999
     },
     {
       "id": "CLEAN-20",
@@ -351,7 +351,7 @@
       "reasons": [],
       "codes": [],
       "layers": [],
-      "processing_time": 9.563
+      "processing_time": 3.751
     },
     {
       "id": "TAMPER-01",
@@ -375,7 +375,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 11.956
+      "processing_time": 4.702
     },
     {
       "id": "TAMPER-02",
@@ -399,7 +399,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 11.672
+      "processing_time": 10.872
     },
     {
       "id": "TAMPER-03",
@@ -423,7 +423,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 9.652
+      "processing_time": 3.57
     },
     {
       "id": "TAMPER-04",
@@ -446,7 +446,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 11.942
+      "processing_time": 14.69
     },
     {
       "id": "TAMPER-05",
@@ -472,7 +472,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 15.648
+      "processing_time": 4.443
     },
     {
       "id": "TAMPER-06",
@@ -498,7 +498,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 12.452
+      "processing_time": 4.363
     },
     {
       "id": "TAMPER-07",
@@ -524,7 +524,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 8.641
+      "processing_time": 3.737
     },
     {
       "id": "TAMPER-08",
@@ -550,7 +550,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 9.449
+      "processing_time": 3.725
     },
     {
       "id": "TAMPER-09",
@@ -576,7 +576,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 7.685
+      "processing_time": 3.695
     },
     {
       "id": "TAMPER-10",
@@ -597,7 +597,7 @@
       "layers": [
         "rules"
       ],
-      "processing_time": 11.576
+      "processing_time": 9.363
     },
     {
       "id": "TAMPER-11",
@@ -618,7 +618,7 @@
       "layers": [
         "rules"
       ],
-      "processing_time": 13.246
+      "processing_time": 3.805
     },
     {
       "id": "TAMPER-12",
@@ -639,7 +639,7 @@
       "layers": [
         "rules"
       ],
-      "processing_time": 8.848
+      "processing_time": 3.541
     },
     {
       "id": "TAMPER-13",
@@ -663,7 +663,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 8.38
+      "processing_time": 9.222
     },
     {
       "id": "TAMPER-14",
@@ -684,7 +684,7 @@
       "layers": [
         "rules"
       ],
-      "processing_time": 8.672
+      "processing_time": 3.507
     },
     {
       "id": "TAMPER-15",
@@ -708,7 +708,7 @@
         "forensics",
         "rules"
       ],
-      "processing_time": 6.986
+      "processing_time": 12.592
     },
     {
       "id": "TAMPER-16",
@@ -729,7 +729,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 7.337
+      "processing_time": 3.188
     },
     {
       "id": "TAMPER-17",
@@ -750,7 +750,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 9.225
+      "processing_time": 3.52
     },
     {
       "id": "TAMPER-18",
@@ -771,7 +771,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 6.792
+      "processing_time": 3.429
     },
     {
       "id": "TAMPER-19",
@@ -792,7 +792,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 8.832
+      "processing_time": 3.797
     },
     {
       "id": "TAMPER-20",
@@ -813,7 +813,7 @@
       "layers": [
         "forensics"
       ],
-      "processing_time": 5.838
+      "processing_time": 3.277
     }
   ]
 }

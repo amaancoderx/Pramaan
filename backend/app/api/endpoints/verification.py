@@ -52,12 +52,15 @@ async def _read_limited(file: UploadFile) -> bytes:
              summary="Verify a payment screenshot")
 async def analyze(file: UploadFile = File(..., description="Payment screenshot (JPG, PNG or WEBP, max 10 MB)"),
                   order_ref: Optional[str] = Form(None, description="Order reference from an order-bound QR"),
+                  check_mode: str = Form("merchant", description="'merchant': paid to me, recently. "
+                                         "'authenticity': only whether the screenshot was edited."),
                   merchant: Merchant = Depends(get_current_merchant), db: Session = Depends(get_db)):
     """Runs image forensics, payment rules and reuse detection, and returns an explainable verdict.
     A screenshot alone never yields CONFIRMED; use `/verify/{id}/sms` with the bank SMS for that."""
     data = await _read_limited(file)
     try:
-        v = await run_in_threadpool(checks.create_check, db, merchant, data, order_ref or None)
+        v = await run_in_threadpool(checks.create_check, db, merchant, data, order_ref or None,
+                                    check_mode=check_mode)
     except PipelineError as e:
         _raise(e)
     return checks.to_response(v, db)

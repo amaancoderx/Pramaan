@@ -134,10 +134,12 @@ def parse_clock(text: str) -> Optional[Tuple[int, int]]:
 
 
 VPA_RE = re.compile(r"([a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63})")
+TRAILING_AMOUNT_RE = re.compile(r"[A-Za-z)]\s*(?:₹|rs\.?|\?)\s*(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?)$", re.I)
+APP_TXN_RE = re.compile(r"(?<![0-9A-Za-z])(T\d{20,23})(?!\d)")
 AMOUNT_RE = re.compile(r"^(?P<cur>₹|rs\.?|inr|[^\w\s,.]{1,2}|[A-Za-z一-鿿]{1})?\s*"
                        r"(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d{1,6}(?:\.\d{1,2})?)\s*(?:/-)?$", re.I)
 UTR_LABELS = ("utr", "upi ref", "ref no", "ref. no", "reference", "transaction id", "txn id", "rrn",
-              "upi transaction id", "transactionid", "refno")
+              "upi transaction id", "transactionid", "refno", "upi ref id", "bank reference")
 TO_LABELS = ("paid to", "sent to", "paying", "transfer to", "to:", "payee", "received by")
 FROM_LABELS = ("from", "debited from", "paid by", "sender")
 NOTE_LABELS = ("note", "message", "remarks", "description")
@@ -198,7 +200,9 @@ class UPIExtractor:
     def extract_all(self, items: List[Item], img_height: int, img_width: int) -> ExtractedData:
         app = self.identify_payment_app(items)
         status_bar_cut = img_height * 0.05
-        body = [i for i in items if i["bbox"]["y"] > status_bar_cut]
+        # Only a clock-like line up there is the phone's status bar; a cropped screenshot starts with content.
+        body = [i for i in items if i["bbox"]["y"] > status_bar_cut or not parse_clock(i["text"])
+                or parse_datetime(i["text"])]
 
         # Status bar clock
         sb = None
@@ -224,6 +228,21 @@ class UPIExtractor:
             score = it["bbox"]["height"] * it["confidence"] * (1.4 if m.group("cur") else 1.0)
             if not best or score > best[0]:
                 best = (score, it, f"{val:.2f}")
+        if not best:
+            # Amount printed on the payee's line ("COMMON SERVICE CENTRE ₹8,375", OCR may read ₹ as ?), or
+            # lower down next to the debit account, as PhonePe does.
+            for it in body:
+                text = it["text"].replace(" ", "")
+                m = TRAILING_AMOUNT_RE.search(text) if it["bbox"]["y"] <= img_height * 0.55 else None
+                standalone = AMOUNT_RE.match(text) if ":" not in text and "%" not in text else None
+                cand = m.group("num") if m else (standalone.group("num") if standalone and "," in text else None)
+                if not cand:
+                    continue
+                val = float(cand.replace(",", ""))
+                if 1 <= val <= 1_000_000:
+                    score = it["bbox"]["height"] * it["confidence"]
+                    if not best or score > best[0]:
+                        best = (score, it, f"{val:.2f}")
         amount = self._field(best[1], best[2]) if best else self._field(None)
 
         words = None
@@ -238,15 +257,22 @@ class UPIExtractor:
             text = it["text"]
             if same_line:
                 text = re.split(r"(?i)(?:utr|ref(?:erence)?\.?\s*no\.?|transaction\s*id|txn\s*id|rrn|:)", text)[-1]
-            m = re.search(r"\b(T\d{20,23}|\d{6,22})\b", text.replace(" ", ""))
+            # Lookarounds, not \b: OCR glues buttons onto the number ("440995361349Copy").
+            m = re.search(r"(?<![0-9A-Za-z])(T\d{20,23}|\d{6,22})(?!\d)", text.replace(" ", ""))
             return m.group(1) if m else None
 
-        found = self._after_label(body, UTR_LABELS, utr_pred)
+        # An explicit "UTR" line wins: it is the number bank SMS quote. App IDs (PhonePe's T...) come next.
+        found = self._after_label(body, ("utr",), utr_pred) or self._after_label(body, UTR_LABELS, utr_pred)
         if found:
             utr = self._field(found[0], found[1], min(1.0, found[0]["confidence"] + 0.05))
         else:
-            fallback = next((i for i in body if re.fullmatch(r"\d{12}", i["text"].replace(" ", ""))), None)
-            utr = self._field(fallback, fallback["text"].replace(" ", "")) if fallback else self._field(None)
+            fallback = None
+            for i in body:
+                m = re.search(r"(?<!\d)(\d{12})(?!\d)", i["text"].replace(" ", ""))
+                if m and not VPA_RE.search(i["text"]):
+                    fallback = (i, m.group(1))
+                    break
+            utr = self._field(fallback[0], fallback[1]) if fallback else self._field(None)
 
         # Timestamp
         ts = self._field(None)
@@ -262,7 +288,9 @@ class UPIExtractor:
                 break
 
         # Receiver: name and VPA below a "Paid to" label, before any "From" label.
-        to_idx = next((i for i, it in enumerate(body) if _has_label(it["text"], TO_LABELS)), None)
+        # Paytm and PhonePe print a bare "To" line above the payee.
+        to_idx = next((i for i, it in enumerate(body)
+                       if _has_label(it["text"], TO_LABELS) or _norm(it["text"]) in ("to", "to:")), None)
         from_idx = next((i for i, it in enumerate(body)
                          if _norm(it["text"]) in ("from", "debitedfrom", "paidby", "sender")
                          or _norm(it["text"]).startswith("from")), None)
@@ -277,6 +305,8 @@ class UPIExtractor:
                 elif j > 0 and not receiver.value and not m and not AMOUNT_RE.match(it["text"].replace(" ", "")):
                     receiver = self._field(it, it["text"])
             label_rest = re.sub(r"(?i)^(paid to|sent to|paying|transfer to|to:?)\s*", "", body[to_idx]["text"]).strip()
+            if _norm(body[to_idx]["text"]) in ("to", "to:"):
+                label_rest = ""
             if not receiver.value and len(label_rest) > 2 and not VPA_RE.search(label_rest):
                 receiver = self._field(body[to_idx], label_rest)
         if not receiver_vpa.value:
@@ -287,6 +317,9 @@ class UPIExtractor:
                 if m:
                     receiver_vpa = self._field(it, m.group(1).lower())
                     break
+        if receiver.value:
+            trimmed = re.sub(r"\s*(?:₹|rs\.?|\?)\s*\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?$", "", receiver.value, flags=re.I)
+            receiver.value = trimmed or receiver.value
         if from_idx is not None and from_idx + 1 < len(body):
             nxt = body[from_idx + 1]
             if not VPA_RE.search(nxt["text"]):
@@ -307,8 +340,11 @@ class UPIExtractor:
                                        max_ahead=1)
         note = self._field(note_found[0], note_found[1]) if note_found else self._field(None)
 
+        txn = next(((it, m.group(1)) for it in body for m in [APP_TXN_RE.search(it["text"].replace(" ", ""))] if m), None)
+        app_txn_id = self._field(txn[0], txn[1]) if txn else self._field(None)
+
         return ExtractedData(
-            payment_app=app, amount=amount, utr=utr, timestamp=ts, sender=sender, receiver=receiver,
+            payment_app=app, app_txn_id=app_txn_id, amount=amount, utr=utr, timestamp=ts, sender=sender, receiver=receiver,
             receiver_upi_id=receiver_vpa, status=status, amount_in_words=words or self._field(None),
             status_bar_time=sb or self._field(None), note=note,
         )

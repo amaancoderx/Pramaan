@@ -31,6 +31,7 @@ class MerchantProfile:
     upi_id: str
     allowed_window_minutes: int = 60
     strictness: str = "standard"
+    check_mode: str = "merchant"
 
 
 def local_now() -> datetime:
@@ -109,7 +110,7 @@ def _rule_context(merchant: MerchantProfile, now: Optional[datetime], w: int = 0
                   hdr: Optional[Tuple[int, int, int]] = None) -> RuleContext:
     return RuleContext(merchant_upi_id=merchant.upi_id, merchant_name=merchant.name,
                        allowed_window_minutes=merchant.allowed_window_minutes, now=now or local_now(),
-                       img_width=w, img_height=h, header_rgb=hdr)
+                       img_width=w, img_height=h, header_rgb=hdr, check_mode=merchant.check_mode)
 
 
 def _apply_validity(extracted: ExtractedData, validity: Dict[str, bool]) -> None:
@@ -139,6 +140,15 @@ VERDICT_TEXT = {
     "LIKELY FAKE": "Do not hand over goods. Confirm in your bank app.",
 }
 
+# Editing check: the question is whether the screenshot was altered, not whether it paid this shop.
+AUTHENTICITY_TEXT = {
+    **VERDICT_TEXT,
+    "LIKELY GENUINE": "No signs of editing found. The screenshot looks like an unaltered receipt from a payment "
+                      "app. Only a bank SMS or statement proves the money moved.",
+    "SUSPICIOUS": "Some signs of editing. Treat this screenshot with caution.",
+    "LIKELY FAKE": "This screenshot shows clear signs of editing or is not a valid payment.",
+}
+
 
 @dataclass
 class Verdict:
@@ -149,7 +159,9 @@ class Verdict:
     layer_scores: Dict[str, float]
 
 
-def compose_verdict(reasons: List[ReasonDetail], strictness: str, sms_matched: bool = False) -> Verdict:
+def compose_verdict(reasons: List[ReasonDetail], strictness: str, sms_matched: bool = False,
+                    check_mode: str = "merchant") -> Verdict:
+    texts = AUTHENTICITY_TEXT if check_mode == "authenticity" else VERDICT_TEXT
     ranked = sorted(reasons, key=lambda r: (SEVERITY_RANK.get(r.severity, 0), r.penalty), reverse=True)
     layers = {k: 0.0 for k in LAYER_CAPS}
     for r in ranked:
@@ -171,14 +183,14 @@ def compose_verdict(reasons: List[ReasonDetail], strictness: str, sms_matched: b
 
     problems = [r for r in ranked if r.penalty > 0 and r.layer != "ground_truth" or r.severity == "CRITICAL"]
     if verdict == "CONFIRMED":
-        text = VERDICT_TEXT["CONFIRMED"]
+        text = texts["CONFIRMED"]
         if problems:
             text += " Note: the screenshot itself has issues listed below; keep this report."
     elif problems:
         top = "; ".join(r.title for r in problems[:2])
-        text = f"{top}. {VERDICT_TEXT[verdict]}"
+        text = f"{top}. {texts[verdict]}"
     else:
-        text = VERDICT_TEXT[verdict]
+        text = texts[verdict]
     return Verdict(verdict=verdict, risk_score=score, final_reason=text, reasons=ranked, layer_scores=layers)
 
 

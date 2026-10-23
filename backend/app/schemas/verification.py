@@ -28,6 +28,8 @@ class ExtractedData(BaseModel):
     amount_in_words: ExtractedField = Field(default_factory=ExtractedField)
     status_bar_time: ExtractedField = Field(default_factory=ExtractedField)
     note: ExtractedField = Field(default_factory=ExtractedField)
+    # App's own transaction ID (PhonePe: T + yyMMddHHmm...), used to cross-check the shown date.
+    app_txn_id: ExtractedField = Field(default_factory=ExtractedField)
 
 
 class FieldCorrectionRequest(BaseModel):
@@ -91,6 +93,7 @@ class VerificationResponse(BaseModel):
     order: Optional[OrderBinding]
     layer_scores: LayerScores
     strictness: str
+    check_mode: str = "merchant"
     handled: bool
     handled_at: Optional[datetime]
     created_at: datetime

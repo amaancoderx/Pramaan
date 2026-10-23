@@ -23,7 +23,11 @@ EDITOR_KEYWORDS = ["photoshop", "picsart", "canva", "pixlr", "snapseed", "gimp",
 CRITICAL_FIELDS = [("amount", "amount"), ("utr", "UTR"), ("timestamp", "date and time"),
                    ("receiver_upi_id", "receiver UPI ID")]
 PENALTY = {"editor": 50, "copy_move": 45, "background": 35, "text_region": 30, "ela": 30,
-           "recompression": 25, "dimensions": 10}
+           "recompression": 25, "dimensions": 10, "added_text": 40}
+# Fields whose text is compared with the rest of the screenshot's text (text_history).
+TRACE_FIELDS = [("amount", "amount"), ("amount_in_words", "amount in words"), ("utr", "UTR"),
+                ("timestamp", "date and time"), ("receiver_upi_id", "receiver UPI ID"), ("receiver", "receiver name")]
+TRACE_RATIO = 1.5  # a field must carry 1.5x the median trace of the other text to count as added later
 MAX_FORENSIC_PENALTY = 70.0
 
 # Standard JPEG luminance quantisation table (quality 50), used to estimate the saved quality.
@@ -230,6 +234,7 @@ class ForensicEngine:
         flat = self.flat_mask(gray)
         residual = np.abs(gray.astype(np.int16) - cv2.medianBlur(gray, 3).astype(np.int16)).astype(np.float32)
         tol = 2.5 if lossless else 4.0
+        dark_mode = float(np.median(gray)) < 100
 
         # Peer statistics from all OCR text lines in the left column of the details card.
         def ink_level(b: Dict[str, int]) -> Optional[float]:
@@ -278,8 +283,9 @@ class ForensicEngine:
                 if a > 1.2 and a > 3 * max(c, 0.25):
                     issues.append(f"grainy background unlike the rest of the screen (noise {a:.1f} vs {c:.1f})")
 
-            # 3. Ink colour vs other values on the card.
-            if ink_ref is not None and key != "amount":
+            # 3. Ink colour vs other values on the card. Dark-text-on-light only: in dark mode the darkest pixels
+            # are the background, not the ink.
+            if ink_ref is not None and key != "amount" and not dark_mode:
                 ink = ink_level(b.model_dump())
                 if ink is not None and ink < 120 and abs(ink - ink_ref) > (10 if lossless else 16):
                     issues.append(f"text colour differs from the other details ({ink:.0f} vs {ink_ref:.0f})")
@@ -287,7 +293,9 @@ class ForensicEngine:
             # 4. Left alignment vs other values on the card.
             if key != "amount" and x_mode is not None and len(aligned) >= 4 and b.x < w * 0.3:
                 dx = b.x - x_mode
-                if abs(dx) > max(5, int(w * 0.005)):
+                # A retyped value sits a few pixels off its column. A large offset is just a different column
+                # (labels on the left, values indented beside an icon), not an edit.
+                if max(5, int(w * 0.005)) < abs(dx) <= int(w * 0.03):
                     issues.append(f"starts {abs(dx)} px out of line with the other details")
 
             if issues:
@@ -301,6 +309,81 @@ class ForensicEngine:
             passed.append(PassedCheck(code="F_FIELDS_CONSISTENT", layer="forensics",
                                       title="Amount, UTR, date and receiver show no signs of retyping"))
         return reasons, passed
+
+    # ---------------------------------------------------------------- text compression history
+    @staticmethod
+    def text_trace(img: np.ndarray, gray: np.ndarray, b: Dict[str, int]) -> Optional[float]:
+        """Re-compression error on a text line's strokes, per unit of contrast, or None for unusable lines.
+
+        Text that has been through every save of the screenshot has settled; text typed on later has been
+        compressed fewer times and loses more when saved again. Only dark, neutral text is comparable:
+        coloured text (links, buttons) carries more chroma error by nature. Works on a crop aligned to the
+        16 px JPEG block grid, so the result matches a full-image ELA without its memory cost."""
+        h, w = gray.shape
+        x0, y0 = max(0, b["x"]), max(0, b["y"])
+        x1, y1 = min(w, b["x"] + b["width"]), min(h, b["y"] + b["height"])
+        if y1 - y0 < 10 or x1 - x0 < 12:
+            return None
+        cx0, cy0 = max(0, (x0 - 8) // 16 * 16), max(0, (y0 - 8) // 16 * 16)
+        cx1, cy1 = min(w, -(-(x1 + 8) // 16) * 16), min(h, -(-(y1 + 8) // 16) * 16)
+        crop = img[cy0:cy1, cx0:cx1]
+        ok, enc = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        if not ok:
+            return None
+        ela = cv2.cvtColor(cv2.absdiff(crop, cv2.imdecode(enc, cv2.IMREAD_COLOR)), cv2.COLOR_BGR2GRAY)
+        gc = gray[cy0:cy1, cx0:cx1]
+        mag = np.hypot(cv2.Sobel(gc, cv2.CV_32F, 1, 0), cv2.Sobel(gc, cv2.CV_32F, 0, 1))
+        inner = (slice(y0 - cy0, y1 - cy0), slice(x0 - cx0, x1 - cx0))
+        g, m, e = gray[y0:y1, x0:x1], mag[inner], ela[inner].astype(np.float32)
+        edge = m > np.percentile(m, 85)
+        if edge.sum() < 30:
+            return None
+        dark = g <= np.percentile(g, 8)
+        ink = img[y0:y1, x0:x1][dark].astype(np.float32)
+        if float(np.median(g[dark])) > 110 or float(np.median(ink.max(axis=1) - ink.min(axis=1))) > 40:
+            return None
+        contrast = float(np.percentile(g, 97) - np.percentile(g, 3)) + 1.0
+        if contrast < 80:
+            return None
+        return float(e[edge].mean() / contrast * 100.0)
+
+    def text_history(self, img: np.ndarray, gray: np.ndarray, ex: ExtractedData,
+                     ocr_items: List[Dict[str, Any]]) -> Tuple[List[ReasonDetail], List[PassedCheck], Dict[str, Any]]:
+        fields = [(k, lbl) for k, lbl in TRACE_FIELDS if getattr(ex, k).value and getattr(ex, k).bbox]
+        field_boxes = {k: getattr(ex, k).bbox.model_dump() for k, _ in fields}
+        peers = []
+        for it in ocr_items:
+            if any(it["bbox"] == fb for fb in field_boxes.values()):
+                continue
+            v = self.text_trace(img, gray, it["bbox"])
+            if v is not None:
+                peers.append(v)
+        info: Dict[str, Any] = {"peers": len(peers)}
+        if len(peers) < 5:
+            return [], [], info
+        med = float(np.median(peers))
+        spread = max(1.4826 * float(np.median(np.abs(np.array(peers) - med))), 0.08 * med)
+        limit = max(med * TRACE_RATIO, med + 4 * spread, float(np.max(peers)) * 1.15)
+        info.update({"median": round(med, 2), "limit": round(limit, 2)})
+        reasons: List[ReasonDetail] = []
+        for key, label in fields:
+            v = self.text_trace(img, gray, field_boxes[key])
+            if v is None:
+                continue
+            info[key] = round(v, 2)
+            if v > limit:
+                b = field_boxes[key]
+                reasons.append(_reason(
+                    "F_TEXT_ADDED_LATER", "HIGH", f"The {label} was typed on later",
+                    f"The {label} carries a different compression history from the rest of the text "
+                    f"({v / med:.1f}× the usual level). Text added in an editor after the screenshot was taken "
+                    "looks like this.", PENALTY["added_text"] + (10 if key in ("amount", "utr") else 0),
+                    field="receiver_upi_id" if key == "receiver" else key,
+                    region={"x": b["x"] - 6, "y": b["y"] - 6, "width": b["width"] + 12, "height": b["height"] + 12},
+                    value={"level": round(v, 2), "usual": round(med, 2)}))
+        passed = [] if reasons else [PassedCheck(code="F_TEXT_HISTORY_UNIFORM", layer="forensics",
+                                                 title="All text shares the same compression history")]
+        return reasons, passed, info
 
     # ---------------------------------------------------------------- orchestration
     def analyze(self, data: bytes, img: np.ndarray, ex: ExtractedData, ocr_items: List[Dict[str, Any]],
@@ -317,6 +400,12 @@ class ForensicEngine:
             fr, fp = self.field_consistency(img, gray, ex, ocr_items, lossless)
             reasons += fr
             passed += fp
+
+        trace_info: Dict[str, Any] = {}
+        if not unreliable:
+            tr, tp, trace_info = self.text_history(img, gray, ex, ocr_items)
+            reasons += tr
+            passed += tp
 
         ela = self.ela_map(img)
         ela_regions = [] if unreliable else self.ela_anomalies(img, gray, ela)
@@ -357,7 +446,8 @@ class ForensicEngine:
             "penalty": penalty,
             "heatmap_path": heatmap_path,
             "summary": {"format": file_info["format"], "jpeg_quality": jpeg_q, "software": file_info["software"],
-                        "camera": file_info["camera"], "copy_move_blocks": n, "ela_regions": len(ela_regions)},
+                        "camera": file_info["camera"], "copy_move_blocks": n, "ela_regions": len(ela_regions),
+                        "text_trace": trace_info},
         }
 
 

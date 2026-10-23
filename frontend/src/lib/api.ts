@@ -96,6 +96,7 @@ export interface Verification {
   order: OrderBinding | null;
   layer_scores: { forensics: number; rules: number; ground_truth: number; duplicate: number };
   strictness: string;
+  check_mode?: CheckMode;
   handled: boolean;
   handled_at: string | null;
   created_at: string;
@@ -362,10 +363,13 @@ export const updateSettings = (data: Partial<Pick<Merchant, "name" | "registered
 export const rotateApiKey = () => json<Merchant>("/api/settings/api-key/rotate", { method: "POST" });
 
 // Verification
-export function analyzeScreenshot(file: File, orderRef?: string | null): Promise<Verification> {
+export type CheckMode = "merchant" | "authenticity";
+
+export function analyzeScreenshot(file: File, orderRef?: string | null, mode: CheckMode = "merchant"): Promise<Verification> {
   const form = new FormData();
   form.append("file", file);
   if (orderRef) form.append("order_ref", orderRef);
+  form.append("check_mode", mode);
   return json<Verification>("/api/verify/analyze", { method: "POST", body: form });
 }
 

@@ -27,8 +27,15 @@ def new_check_id() -> str:
     return "PRM-" + "".join(secrets.choice(_ID_ALPHABET) for _ in range(8))
 
 
-def profile(m: Merchant) -> MerchantProfile:
-    return MerchantProfile(m.name, m.registered_upi_id, m.allowed_window_minutes, m.strictness)
+def profile(m: Merchant, check_mode: str = "merchant") -> MerchantProfile:
+    return MerchantProfile(m.name, m.registered_upi_id, m.allowed_window_minutes, m.strictness, check_mode)
+
+
+def mode_of(v: Verification) -> str:
+    try:
+        return json.loads(v.forensic_summary or "{}").get("check_mode", "merchant")
+    except ValueError:
+        return "merchant"
 
 
 def _ext_for(data: bytes) -> str:
@@ -95,7 +102,8 @@ def recompute(v: Verification) -> None:
     gtr = _ground_truth_reason(gt)
     if gtr:
         reasons.append(gtr)
-    res = compose_verdict(reasons, v.strictness, sms_matched=gt.get("status") == "SMS_MATCHED")
+    res = compose_verdict(reasons, v.strictness, sms_matched=gt.get("status") == "SMS_MATCHED",
+                          check_mode=mode_of(v))
     v.verdict, v.risk_score, v.final_verdict_reason = res.verdict, res.risk_score, res.final_reason
     if gt.get("status") == "SMS_MATCHED" and any(r.code == "DUP_UTR_REUSED" for r in reasons):
         v.final_verdict_reason = ("The SMS matches, but this UTR was already used for an earlier check, so this "
@@ -103,7 +111,9 @@ def recompute(v: Verification) -> None:
 
 
 def create_check(db: Session, merchant: Merchant, data: bytes, order_ref: Optional[str] = None,
-                 now: Optional[datetime] = None, created_at: Optional[datetime] = None) -> Verification:
+                 now: Optional[datetime] = None, created_at: Optional[datetime] = None,
+                 check_mode: str = "merchant") -> Verification:
+    check_mode = "authenticity" if check_mode == "authenticity" else "merchant"
     order = None
     if order_ref:
         order = db.query(Order).filter(Order.order_ref == order_ref.strip().upper(),
@@ -114,7 +124,7 @@ def create_check(db: Session, merchant: Merchant, data: bytes, order_ref: Option
     vid = new_check_id()
     token = secrets.token_hex(16)
     heatmap_name = f"{token}_ela.jpg"
-    a = analyze_image(data, profile(merchant), now=now, heatmap_path=str(settings.UPLOAD_DIR / heatmap_name))
+    a = analyze_image(data, profile(merchant, check_mode), now=now, heatmap_path=str(settings.UPLOAD_DIR / heatmap_name))
 
     image_name = token + _ext_for(data)
     (settings.UPLOAD_DIR / image_name).write_bytes(data)
@@ -142,7 +152,7 @@ def create_check(db: Session, merchant: Merchant, data: bytes, order_ref: Option
         extracted_receiver_upi=ex.receiver_upi_id.value, extracted_data=ex.model_dump_json(), ocr_text=ocr_text,
         rule_reasons=dumps(a.rule_reasons), forensic_reasons=dumps(a.forensic_reasons),
         order_reasons=dumps(o_reasons), duplicate_reason=dup.model_dump_json() if dup else None,
-        passed_checks=dumps(passed), forensic_summary=json.dumps(a.forensic_summary),
+        passed_checks=dumps(passed), forensic_summary=json.dumps({**a.forensic_summary, "check_mode": check_mode}),
         order_ref=order.order_ref if order else None, perceptual_hash=f"{phash}:{dhash}", is_reused=bool(dup),
         reused_first_seen_id=first.id if first else None,
         processing_time_seconds=round(a.timings["total"], 2),
@@ -186,7 +196,7 @@ def apply_corrections(db: Session, v: Verification, merchant: Merchant, c: Field
     if v.created_at:
         from zoneinfo import ZoneInfo
         created_local = v.created_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo(settings.TIMEZONE)).replace(tzinfo=None)
-    rule_reasons, rule_passed = rescore_rules(ex, profile(merchant), v.image_width or 0, v.image_height or 0,
+    rule_reasons, rule_passed = rescore_rules(ex, profile(merchant, mode_of(v)), v.image_width or 0, v.image_height or 0,
                                               now=created_local)
     v.extracted_data = ex.model_dump_json()
     v.extracted_amount = float(ex.amount.value) if ex.amount.value else None
@@ -265,7 +275,8 @@ def to_response(v: Verification, db: Session) -> VerificationResponse:
     gtr = _ground_truth_reason(gt)
     if gtr:
         reasons.append(gtr)
-    comp = compose_verdict(reasons, v.strictness, sms_matched=gt.get("status") == "SMS_MATCHED")
+    comp = compose_verdict(reasons, v.strictness, sms_matched=gt.get("status") == "SMS_MATCHED",
+                           check_mode=mode_of(v))
 
     order = None
     if v.order_ref:
@@ -294,6 +305,7 @@ def to_response(v: Verification, db: Session) -> VerificationResponse:
         report_url=f"/api/verify/{v.id}/report", extracted_data=ex, is_reused=v.is_reused,
         reused_first_seen=first,
         ground_truth=GroundTruth(**{k: gt.get(k) for k in GroundTruth.model_fields if k in gt}) if gt else GroundTruth(),
-        order=order, layer_scores=LayerScores(**comp.layer_scores), strictness=v.strictness, handled=v.handled,
+        order=order, layer_scores=LayerScores(**comp.layer_scores), strictness=v.strictness,
+        check_mode=mode_of(v), handled=v.handled,
         handled_at=v.handled_at, created_at=v.created_at, processing_time_seconds=v.processing_time_seconds or 0.0,
     )

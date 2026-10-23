@@ -22,6 +22,16 @@ class RuleContext:
     img_width: int = 0
     img_height: int = 0
     header_rgb: Optional[Tuple[int, int, int]] = None
+    # "merchant": was this paid to me, recently? "authenticity": is the screenshot itself unedited?
+    check_mode: str = "merchant"
+
+
+# Checks about who was paid and when. They say nothing about editing, so in authenticity mode they are
+# reported as information without risk points.
+MERCHANT_ONLY_CODES = {"R_RECEIVER_MISMATCH", "R_RECEIVER_NAME_DIVERGENT", "R_RECEIVER_NOT_VISIBLE",
+                       "R_TXN_EXPIRED", "R_DELAYED_SCREENSHOT"}
+AUTHENTICITY_TITLES = {"R_RECEIVER_MISMATCH": "Paid to another UPI ID", "R_RECEIVER_NAME_DIVERGENT": "Paid to someone else",
+                       "R_TXN_EXPIRED": "Older payment", "R_DELAYED_SCREENSHOT": "Screenshot taken later"}
 
 
 def _norm_name(s: str) -> str:
@@ -73,11 +83,16 @@ class RulesEngine:
         def fail(code, severity, title, message, penalty_key=None, field=None, evidence="field", value=None,
                  penalty=None):
             pen = penalty if penalty is not None else (P.get(penalty_key, 0) if penalty_key else 0)
+            if ctx.check_mode == "authenticity" and code in MERCHANT_ONLY_CODES:
+                severity, pen = "INFO", 0
+                title = AUTHENTICITY_TITLES.get(code, title)
+                message = (message.split(". ")[0].rstrip(".") + ". Shown for information: this check looks for "
+                           "editing, not at who was paid or when.")
             box = getattr(ex, field).bbox if field and hasattr(ex, field) else None
             reasons.append(ReasonDetail(code=code, severity=severity, layer="rules", title=title, message=message,
                                         field=field, penalty=float(pen), evidence_type=evidence if field else None,
                                         evidence_value=value, region=box))
-            if field:
+            if field and severity != "INFO":
                 validity[field] = False
 
         def ok(code, title):
@@ -184,6 +199,20 @@ class RulesEngine:
                 validity["timestamp"] = True
                 ok("R_TXN_WINDOW", "Payment time is recent and within your window")
 
+        # 5b. PhonePe transaction IDs start with the payment's own time: T + yyMMddHHmm. Editors change the date
+        # line and leave the ID alone.
+        tid = (ex.app_txn_id.value or "") if ex.app_txn_id else ""
+        tid_dt = _txn_id_time(tid)
+        if txn_dt and tid_dt:
+            gap = abs((tid_dt - txn_dt).total_seconds()) / 60
+            if gap <= self.defaults["clock_tolerance_minutes"]:
+                ok("R_TXN_ID_TIME_MATCH", "Transaction ID matches the payment date and time")
+            else:
+                fail("R_TXN_ID_TIME_MISMATCH", "CRITICAL", "Date does not match the transaction ID",
+                     f"The transaction ID {tid[:11]}... was issued on {tid_dt:%d %b %Y, %I:%M %p}, but the screenshot "
+                     f"shows {txn_dt:%d %b %Y, %I:%M %p}. The date or time was edited.", "txn_id_time_mismatch",
+                     "timestamp", value={"id_time": tid_dt.isoformat(), "shown": txn_dt.isoformat()})
+
         # 6. Status-bar clock vs transaction time
         if txn_dt and ex.status_bar_time.value:
             clock = parse_clock(ex.status_bar_time.value)
@@ -238,8 +267,10 @@ class RulesEngine:
                      f"'{f.value}' was read with {f.confidence * 100:.0f}% confidence. Check it against the "
                      "customer's phone.", "low_confidence", name)
 
-        # 9. Layout template
-        deviations = self._layout_deviations(ex, app_cfg.get("layout", {}), ctx)
+        # 9. Layout template. Only for an identified app: an unknown app has no template to compare against,
+        # and real apps differ by version (Paytm left-aligns the amount, for example).
+        layout = app_cfg.get("layout", {}) if ex.payment_app != "generic" else {}
+        deviations = self._layout_deviations(ex, layout, ctx) if layout else []
         if deviations:
             fail("R_LAYOUT_MISMATCH", "LOW", "Layout differs from the usual receipt",
                  "Compared with the expected layout for " + app_cfg.get("name", "this app") + ": "
@@ -256,6 +287,9 @@ class RulesEngine:
         out: List[str] = []
         if not ctx.img_height or not ex.amount.bbox:
             return out
+        # Positions are fractions of a full phone screen; a cropped screenshot has no fixed frame.
+        if ctx.img_width and max(ctx.img_width, ctx.img_height) / min(ctx.img_width, ctx.img_height) < 1.55:
+            return out
         b = ex.amount.bbox
         cy = (b.y + b.height / 2) / ctx.img_height
         lo, hi = layout.get("amount_y_range", [0.0, 1.0])
@@ -268,11 +302,23 @@ class RulesEngine:
         if layout.get("status_above_amount") and ex.status.bbox and ex.status.bbox.y > b.y:
             out.append("the status line is below the amount")
         expected_rgb = layout.get("header_rgb")
-        if expected_rgb and ctx.header_rgb:
+        # A near-black header is the app's dark mode, not a different theme.
+        if expected_rgb and ctx.header_rgb and max(ctx.header_rgb) > 45:
             dist = sum((a - c) ** 2 for a, c in zip(ctx.header_rgb, expected_rgb)) ** 0.5
             if dist > 120:
                 out.append("header colours differ from this app's theme")
         return out
+
+
+def _txn_id_time(tid: str) -> Optional[datetime]:
+    m = re.fullmatch(r"T(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\d{10,13}", tid or "")
+    if not m:
+        return None
+    try:
+        yy, mo, dd, hh, mi = (int(g) for g in m.groups())
+        return datetime(2000 + yy, mo, dd, hh, mi)
+    except ValueError:
+        return None
 
 
 def _human_age(minutes: float) -> str:

@@ -30,6 +30,7 @@ penalties:
   txn_expired: 30
   timestamp_missing: 15
   clock_inconsistent: 30
+  txn_id_time_mismatch: 45
   delayed_screenshot: 5
   status_not_success: 50
   status_missing: 10

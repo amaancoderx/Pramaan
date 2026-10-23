@@ -239,6 +239,12 @@ export default function CheckPage() {
         </p>
       </div>
 
+      {check.check_mode === "authenticity" && (
+        <p className="w-fit rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted">
+          {t.verify.modeAuthenticity} · {t.verify.modeAuthenticityHint}
+        </p>
+      )}
+
       <VerdictCard verdict={check.verdict} score={check.risk_score} reason={check.final_verdict_reason} />
 
       {check.handled && (
