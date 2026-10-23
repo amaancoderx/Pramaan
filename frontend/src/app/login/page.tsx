@@ -36,6 +36,11 @@ function LoginForm() {
     if (status === "authenticated") router.replace(next);
   }, [status, next, router]);
 
+  // Start waking a sleeping API while the user types.
+  useEffect(() => {
+    fetch("/api/health").catch(() => undefined);
+  }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);

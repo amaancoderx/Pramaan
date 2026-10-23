@@ -297,15 +297,21 @@ async function request(path: string, init: RequestInit = {}, auth = true): Promi
   }
 
   let res: Response;
-  try {
-    res = await fetch(path, { ...init, headers });
-  } catch {
-    const offline = typeof navigator !== "undefined" && !navigator.onLine;
-    throw new ApiError(
-      offline ? "You are offline. Analysis needs an internet connection." : "Could not reach the Pramaan server.",
-      0,
-      offline ? "OFFLINE" : "NETWORK"
-    );
+  // A sleeping free-tier API answers 502/503/504 for up to a minute while it boots; wait it out.
+  const wakeDeadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      res = await fetch(path, { ...init, headers });
+    } catch {
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
+      throw new ApiError(
+        offline ? "You are offline. Analysis needs an internet connection." : "Could not reach the Pramaan server.",
+        0,
+        offline ? "OFFLINE" : "NETWORK"
+      );
+    }
+    if (![502, 503, 504].includes(res.status) || Date.now() > wakeDeadline) break;
+    await new Promise((r) => setTimeout(r, 3_000));
   }
 
   if (!res.ok) {
