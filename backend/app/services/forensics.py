@@ -298,7 +298,11 @@ class ForensicEngine:
                 if max(5, int(w * 0.005)) < abs(dx) <= int(w * 0.03):
                     issues.append(f"starts {abs(dx)} px out of line with the other details")
 
-            if issues:
+            # A few pixels of offset, or a slightly different grey, also happen on genuine screens (OCR boxes
+            # start at each glyph's edge; apps colour labels and values differently). Either alone is not
+            # evidence; a grainy patch is, and so are two signs on the same field.
+            grainy = any(i.startswith("grainy") for i in issues)
+            if grainy or len(issues) >= 2:
                 reasons.append(_reason(
                     "F_TEXT_REGION_INCONSISTENT", "HIGH", f"The {label} looks retyped",
                     f"Compared with the rest of the receipt, the {label} has " + "; ".join(issues) + ".",

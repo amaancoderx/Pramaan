@@ -1,4 +1,5 @@
 """Reused-proof detection: the same UTR, or the same screenshot (even cropped or re-compressed), seen before."""
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 import cv2
@@ -14,6 +15,8 @@ from app.schemas.verification import ExtractedData
 # Hamming distances on 256-bit hashes of the payment-specific fields.
 SAME_IMAGE_MAX_DIST = 26       # measured: reused copies 12-18, different payments >= 34
 SAME_AMOUNT_MAX_DIST = 32      # looser, only when the amounts match and a UTR is unreadable
+# The same shop checking the same proof again this soon, before handing over goods, is re-checking one sale.
+RECHECK_WINDOW = timedelta(minutes=30)
 
 # Fields that differ between two genuine payments but survive cropping and re-compression. The UTR is left out
 # on purpose so a reused screenshot with an edited UTR still matches.
@@ -52,6 +55,32 @@ def _reason(code: str, title: str, message: str, first: Verification, same_merch
 
 def _when(v: Verification) -> str:
     return v.created_at.strftime("%d %b %Y, %H:%M UTC")
+
+
+def classify(reason: Optional[ReasonDetail], first: Optional[Verification], *, check_mode: str = "merchant",
+             now: Optional[datetime] = None) -> Optional[ReasonDetail]:
+    """Turn a match into reuse (risk) or information.
+
+    Reuse fraud is a proof coming back for a new purchase or at another shop. A shopkeeper checking the same
+    proof again minutes later, before handing over goods, is one sale checked twice. And in the editing check
+    the question is whether the image was altered, which a repeat says nothing about."""
+    if not reason or not first:
+        return reason
+    same = bool((reason.evidence_value or {}).get("same_merchant"))
+    now = now or datetime.utcnow()
+    recheck = same and not first.handled and now - first.created_at <= RECHECK_WINDOW
+    if recheck:
+        return reason.model_copy(update={
+            "code": "DUP_RECHECK", "severity": "INFO", "penalty": 0.0, "title": "You checked this payment before",
+            "message": f"You already checked this payment at {_when(first)} ({first.id}). If this is the same sale, "
+                       "this is just a re-check. If the customer is using it for a new purchase, it is a reused "
+                       "proof: do not accept it."})
+    if check_mode == "authenticity":
+        return reason.model_copy(update={
+            "severity": "INFO", "penalty": 0.0,
+            "message": reason.message.rsplit(". ", 1)[0].rstrip(".") + ". Shown for information: this check looks "
+                       "for editing; a repeat says nothing about whether the image was altered."})
+    return reason
 
 
 def find_reuse(db: Session, *, merchant_id: int, verification_id: str, utr: Optional[str], amount: Optional[float],

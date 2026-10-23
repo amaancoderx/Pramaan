@@ -135,6 +135,7 @@ def create_check(db: Session, merchant: Merchant, data: bytes, order_ref: Option
     phash, dhash = duplicate_detector.fingerprint(a.image, ex)
     dup, first = duplicate_detector.find_reuse(db, merchant_id=merchant.id, verification_id=vid,
                                                utr=ex.utr.value, amount=amount, phash=phash, dhash=dhash)
+    dup = duplicate_detector.classify(dup, first, check_mode=check_mode)
     passed = a.rule_passed + a.forensic_passed
     if not dup:
         passed.append(PassedCheck(code="DUP_NONE", layer="duplicate", title="Not seen in any earlier check"))
@@ -153,7 +154,7 @@ def create_check(db: Session, merchant: Merchant, data: bytes, order_ref: Option
         rule_reasons=dumps(a.rule_reasons), forensic_reasons=dumps(a.forensic_reasons),
         order_reasons=dumps(o_reasons), duplicate_reason=dup.model_dump_json() if dup else None,
         passed_checks=dumps(passed), forensic_summary=json.dumps({**a.forensic_summary, "check_mode": check_mode}),
-        order_ref=order.order_ref if order else None, perceptual_hash=f"{phash}:{dhash}", is_reused=bool(dup),
+        order_ref=order.order_ref if order else None, perceptual_hash=f"{phash}:{dhash}", is_reused=bool(dup and dup.penalty > 0),
         reused_first_seen_id=first.id if first else None,
         processing_time_seconds=round(a.timings["total"], 2),
     )
@@ -218,8 +219,10 @@ def apply_corrections(db: Session, v: Verification, merchant: Merchant, c: Field
         dup, first = duplicate_detector.find_reuse(db, merchant_id=merchant.id, verification_id=v.id,
                                                    utr=ex.utr.value, amount=v.extracted_amount,
                                                    phash=phash or "0" * 16, dhash=dhash or "0" * 16)
+        dup = duplicate_detector.classify(dup, first, check_mode=mode_of(v), now=v.created_at)
         v.duplicate_reason = dup.model_dump_json() if dup else None
-        v.is_reused, v.reused_first_seen_id = bool(dup), first.id if first else None
+        v.is_reused = bool(dup and dup.penalty > 0)
+        v.reused_first_seen_id = first.id if first else None
         passed = [p for p in passed if p.layer != "duplicate"]
         if not dup:
             passed.append(PassedCheck(code="DUP_NONE", layer="duplicate", title="Not seen in any earlier check"))
