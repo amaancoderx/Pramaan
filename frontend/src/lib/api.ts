@@ -286,6 +286,16 @@ function handleUnauthorized() {
   window.location.replace(`/login?next=${next}`);
 }
 
+let wakeSent = 0;
+
+// The web app's proxy gives up before a sleeping Render API boots, so wake the API by its own URL.
+export function wakeBackend() {
+  if (typeof window === "undefined" || !process.env.NEXT_PUBLIC_BACKEND_URL) return;
+  if (Date.now() - wakeSent < 20_000) return;
+  wakeSent = Date.now();
+  fetch(`${backendOrigin()}/api/health`, { mode: "no-cors" }).catch(() => undefined);
+}
+
 async function request(path: string, init: RequestInit = {}, auth = true): Promise<Response> {
   const headers = new Headers(init.headers);
   if (auth) {
@@ -311,6 +321,7 @@ async function request(path: string, init: RequestInit = {}, auth = true): Promi
       );
     }
     if (![502, 503, 504].includes(res.status) || Date.now() > wakeDeadline) break;
+    wakeBackend();
     await new Promise((r) => setTimeout(r, 3_000));
   }
 

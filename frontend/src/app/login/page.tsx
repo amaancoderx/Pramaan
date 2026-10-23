@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { Alert, Button, Card, Input, Label, Spinner } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { ApiError, wakeBackend } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEMO_EMAIL = "merchant@pramaan.local";
@@ -38,7 +38,7 @@ function LoginForm() {
 
   // Start waking a sleeping API while the user types.
   useEffect(() => {
-    fetch("/api/health").catch(() => undefined);
+    wakeBackend();
   }, []);
 
   const submit = async (e: React.FormEvent) => {
